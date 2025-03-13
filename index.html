@@ -1,0 +1,252 @@
+// index.html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>乗り鉄ルート探索</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        .route {
+            margin-bottom: 15px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #4CAF50;
+        }
+        .route-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .station {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .line {
+            color: #666;
+            font-style: italic;
+        }
+        .time {
+            color: #333;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>乗り鉄ルート探索</h1>
+        
+        <div class="form-group">
+            <label for="startStation">出発駅:</label>
+            <input type="text" id="startStation" placeholder="例: 東京">
+        </div>
+        
+        <div class="form-group">
+            <label for="endStation">到着駅:</label>
+            <input type="text" id="endStation" placeholder="例: 京都">
+        </div>
+        
+        <div class="form-group">
+            <label for="startTime">出発時刻:</label>
+            <input type="time" id="startTime" value="08:00">
+        </div>
+        
+        <div class="form-group">
+            <label for="endTime">到着時刻:</label>
+            <input type="time" id="endTime" value="18:00">
+        </div>
+        
+        <div class="form-group">
+            <label for="preferredLine">乗りたい路線 (オプション):</label>
+            <input type="text" id="preferredLine" placeholder="例: 山手線">
+        </div>
+        
+        <div class="form-group">
+            <label for="routeType">ルートタイプ:</label>
+            <select id="routeType">
+                <option value="long">できるだけ長いルート</option>
+                <option value="single-stroke">一筆書きルート</option>
+                <option value="circuit">周遊ルート (出発駅に戻る)</option>
+            </select>
+        </div>
+        
+        <button onclick="findRoutes()">ルートを探索</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script src="train-network.js"></script>
+    <script src="route-finder.js"></script>
+    <script>
+        function findRoutes() {
+            const startStation = document.getElementById('startStation').value;
+            const endStation = document.getElementById('endStation').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            const preferredLine = document.getElementById('preferredLine').value;
+            const routeType = document.getElementById('routeType').value;
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>ルートを探索中...</p>';
+            
+            try {
+                // 入力検証
+                if (!startStation || !endStation) {
+                    throw new Error('出発駅と到着駅を入力してください');
+                }
+                
+                // ネットワークから駅を探す
+                const startNode = findStationInNetwork(startStation);
+                const endNode = findStationInNetwork(endStation);
+                
+                if (!startNode) {
+                    throw new Error(`出発駅「${startStation}」が見つかりません`);
+                }
+                if (!endNode) {
+                    throw new Error(`到着駅「${endStation}」が見つかりません`);
+                }
+                
+                // 時間の検証
+                const [startHour, startMinute] = startTime.split(':').map(Number);
+                const [endHour, endMinute] = endTime.split(':').map(Number);
+                
+                const startTimeMinutes = startHour * 60 + startMinute;
+                const endTimeMinutes = endHour * 60 + endMinute;
+                
+                if (endTimeMinutes <= startTimeMinutes) {
+                    throw new Error('到着時刻は出発時刻より後にしてください');
+                }
+                
+                // ルート探索
+                const routeFinder = new RouteFinder(trainNetwork);
+                let routes;
+                
+                switch (routeType) {
+                    case 'long':
+                        routes = routeFinder.findLongestRoute(startNode, endNode, preferredLine);
+                        break;
+                    case 'single-stroke':
+                        routes = routeFinder.findSingleStrokeRoute(startNode, endNode, preferredLine);
+                        break;
+                    case 'circuit':
+                        routes = routeFinder.findCircuitRoute(startNode, preferredLine);
+                        break;
+                    default:
+                        routes = routeFinder.findLongestRoute(startNode, endNode, preferredLine);
+                }
+                
+                // 結果の表示
+                if (routes.length === 0) {
+                    resultDiv.innerHTML = '<p class="error">ルートが見つかりませんでした。条件を変更して再試行してください。</p>';
+                } else {
+                    displayRoutes(routes, resultDiv);
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">エラー: ${error.message}</p>`;
+            }
+        }
+        
+        function displayRoutes(routes, container) {
+            container.innerHTML = '';
+            
+            const header = document.createElement('h2');
+            header.textContent = `${routes.length}件のルートが見つかりました`;
+            container.appendChild(header);
+            
+            routes.forEach((route, index) => {
+                const routeDiv = document.createElement('div');
+                routeDiv.className = 'route';
+                
+                const routeTitle = document.createElement('div');
+                routeTitle.className = 'route-title';
+                routeTitle.textContent = `ルート ${index + 1}: 総駅数 ${route.stations.length}駅、総路線数 ${route.lines.length}路線`;
+                routeDiv.appendChild(routeTitle);
+                
+                route.stations.forEach((station, i) => {
+                    const stationDiv = document.createElement('div');
+                    stationDiv.className = 'station';
+                    
+                    if (i < route.stations.length - 1) {
+                        stationDiv.innerHTML = `
+                            <span class="time">${formatTime(station.time)}</span> 
+                            <strong>${station.name}</strong> → 
+                            <span class="line">${route.lines[i]}</span>
+                        `;
+                    } else {
+                        stationDiv.innerHTML = `
+                            <span class="time">${formatTime(station.time)}</span> 
+                            <strong>${station.name}</strong> (到着)
+                        `;
+                    }
+                    
+                    routeDiv.appendChild(stationDiv);
+                });
+                
+                container.appendChild(routeDiv);
+            });
+        }
+        
+        function formatTime(minutes) {
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+        }
+    </script>
+</body>
+</html>
